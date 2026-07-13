@@ -1,0 +1,20 @@
+# Paper-scale: same code path as pilot.yaml, larger numbers. Intended for a
+# GPU machine with the full VCTK/MUSAN/LibriSpeech downloads. Bump
+# encoders.batch_size and set encoders.device: cuda once run on GPU hardware.
+data:
+  max_speakers: null
+  max_utterances_per_speaker: null
+  max_musan_noise_files: null
+  max_librispeech_speakers: null
+  max_librispeech_utterances_per_speaker: null
+  held_out_speaker_fraction: 0.2
+  n_speaker_pairs: 20000
+  n_content_pairs: 20000
+  n_environment_pairs: 20000
+  n_channel_pairs: 20000
+  snr_levels_db: [-5.0, 0.0, 5.0, 10.0, 15.0, 20.0]
+  seed: 0
+
+encoders:
+  batch_size: 16
+  device: cpu  # change to "cuda" when running on a GPU machine

@@ -216,3 +216,27 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# I-SPLIT project-specific
+data/raw/*
+!data/raw/.gitkeep
+results/*
+!results/.gitkeep
+!results/features/
+!results/manifests/
+!results/tables/
+!results/figures/
+results/features/*
+results/manifests/*
+results/tables/*
+results/figures/*
+!results/features/.gitkeep
+!results/manifests/.gitkeep
+!results/tables/.gitkeep
+!results/figures/.gitkeep
+*.npz
+*.pt
+checkpoints/
+wandb/
+uv.lock.bak
+

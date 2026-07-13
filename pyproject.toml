@@ -1,0 +1,69 @@
+[project]
+name = "isplit"
+version = "0.1.0"
+description = "I-SPLIT: Intervention-Guided Subspace Learning and Interchange Testing for frozen speech representations"
+authors = [
+    { name = "DngBack", email = "bachduong7103@gmail.com" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Core numerics / classical ML
+    "numpy>=1.26,<2.0",
+    "scipy>=1.13",
+    "scikit-learn>=1.5",
+    "pandas>=2.2",
+    "pyarrow>=16.0",
+
+    # Deep learning (CPU-only wheels; index pinned below)
+    "torch==2.5.*",
+    "transformers>=4.44,<5.0",
+    "accelerate>=0.33",
+    "safetensors>=0.4",
+
+    # Audio I/O / DSP (no torchaudio -- see plan notes on deprecation/FFmpeg risk)
+    "soundfile>=0.12",
+
+    # Data acquisition
+    "huggingface-hub>=0.24",
+    "requests>=2.32",
+    "tqdm>=4.66",
+
+    # Config / CLI / utils
+    "pyyaml>=6.0",
+    "click>=8.1",
+
+    # Text metric for content probe (CER/WER, no phonemizer/espeak needed)
+    "jiwer>=3.0",
+
+    # Plotting / reporting
+    "matplotlib>=3.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+isplit = "isplit:main"
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
