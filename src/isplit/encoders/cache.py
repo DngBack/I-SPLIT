@@ -33,7 +33,10 @@ def save_features(path: str | Path, features: dict[int, np.ndarray]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     arrays = {f"layer_{i:02d}": np.asarray(arr, dtype=np.float16) for i, arr in features.items()}
     tmp_path = path.with_suffix(".npz.tmp")
-    np.savez(tmp_path, **arrays)
+    # savez() appends '.npz' to a *path* whose name doesn't end in .npz, but not
+    # to an open file object -- pass a handle so the temp file lands where we expect.
+    with open(tmp_path, "wb") as f:
+        np.savez(f, **arrays)
     tmp_path.replace(path)  # atomic on the same filesystem -- avoids half-written cache files
 
 

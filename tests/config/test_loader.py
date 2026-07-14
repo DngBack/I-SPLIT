@@ -4,10 +4,18 @@ from isplit.config.loader import load_config
 def test_load_pilot_config_from_real_configs_dir():
     cfg = load_config(scale="pilot", config_dir="configs")
     assert cfg.scale == "pilot"
-    assert cfg.data.max_speakers == 20
-    assert cfg.data.max_utterances_per_speaker == 15
-    assert cfg.encoders.device == "cpu"
+    assert cfg.data.max_speakers == 40
+    assert cfg.data.max_utterances_per_speaker == 20
+    # device is a property of the machine the pilot runs on, not of the scale
+    # (the RUNBOOK has you set it to cuda for a GPU-accelerated pilot), so pin
+    # the merge behaviour rather than one host's answer.
+    assert cfg.encoders.device in ("cpu", "cuda")
     assert len(cfg.encoders.encoders) == 4
+    # active_encoders narrows which of the 4 registered encoders a run actually
+    # touches; pilot.yaml currently runs all of them (None), but the field
+    # exists to subset -- see EncodersConfig.active().
+    assert cfg.encoders.active_encoders is None
+    assert [e.name for e in cfg.encoders.active()] == [e.name for e in cfg.encoders.encoders]
 
 
 def test_load_full_config_has_no_speaker_cap():

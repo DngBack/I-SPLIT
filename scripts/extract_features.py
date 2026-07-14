@@ -24,7 +24,7 @@ from isplit.data.manifest import (
     build_musan_noise_manifest,
     build_vctk_manifest,
 )
-from isplit.data.pairs import build_all_pairs
+from isplit.data.pairs import build_all_pairs, split_speakers
 from isplit.data.requests import collect_feature_requests
 from isplit.encoders.cache import cache_path, has_cache, save_features
 from isplit.encoders.extract import extract_hidden_states
@@ -77,6 +77,28 @@ def main(scale: str, config_dir: str) -> None:
         df.to_parquet(manifests_dir / f"pairs_{factor}.parquet")
 
     requests = collect_feature_requests(pair_sets)
+
+    # The pair tables only cover utterances that happened to be sampled into a
+    # pair, but the probes and the decodability audit (eval/layerwise_audit.py)
+    # read clean features for *every* manifest utterance. Request those too, on
+    # the same speaker-disjoint split the pairs were built against.
+    train_speakers, _ = split_speakers(
+        vctk["speaker_id"], cfg.data.held_out_speaker_fraction, cfg.data.seed
+    )
+    clean_requests = pd.DataFrame(
+        {
+            "utt_id": vctk["utt_id"],
+            "condition": None,
+            "split": [
+                "train" if sid in train_speakers else "held_out" for sid in vctk["speaker_id"]
+            ],
+        }
+    )
+    requests = (
+        pd.concat([requests, clean_requests], ignore_index=True)
+        .drop_duplicates(subset=["utt_id", "condition"])
+        .reset_index(drop=True)
+    )
     logger.info("Total VCTK (utterance, condition) feature requests: %d", len(requests))
 
     logger.info("Building LibriSpeech dev-clean manifest from %s", cfg.data.librispeech_dir)
@@ -113,7 +135,7 @@ def main(scale: str, config_dir: str) -> None:
             noise_wav_cache[key] = wav
         return noise_wav_cache[key]
 
-    for encoder_cfg in cfg.encoders.encoders:
+    for encoder_cfg in cfg.encoders.active():
         logger.info("Loading encoder %s (%s)...", encoder_cfg.name, encoder_cfg.hf_id)
         spec = load_encoder(encoder_cfg.name, device=cfg.encoders.device)
 

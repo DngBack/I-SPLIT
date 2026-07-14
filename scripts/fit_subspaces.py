@@ -46,7 +46,7 @@ def main(scale: str, config_dir: str) -> None:
     }
 
     summary_rows = []
-    for encoder_cfg in cfg.encoders.encoders:
+    for encoder_cfg in cfg.encoders.active():
         for layer in range(encoder_cfg.num_layers + 1):  # +1 for the input-embedding layer (index 0)
             # unlabeled PCA/random baselines only need a pool of train-split features,
             # not paired data -- reuse the speaker-pair "a" utterances as that pool.

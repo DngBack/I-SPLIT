@@ -21,6 +21,18 @@ def text_to_indices(text: str) -> list[int]:
     return [CHAR_TO_IDX[c] for c in text if c in CHAR_TO_IDX]
 
 
+def _normalize_for_scoring(text: str) -> str:
+    """Restrict text to exactly the characters the CTC head's alphabet can
+    produce (see _ALPHABET). The reference text is raw VCTK transcript text
+    (mixed case, with punctuation outside the alphabet); scoring it as-is
+    against a hypothesis that can only ever be uppercase A-Z/space/apostrophe
+    means every letter is counted as an error from case mismatch alone --
+    CER stays pinned near 1.0 regardless of transcription quality.
+    """
+    text = text.upper()
+    return "".join(c for c in text if c in CHAR_TO_IDX)
+
+
 def greedy_decode(log_probs: "np.ndarray") -> str:
     """log_probs: (T, vocab_size). Collapse repeats then drop blanks."""
     best_path = log_probs.argmax(axis=-1)
@@ -37,6 +49,8 @@ def greedy_decode(log_probs: "np.ndarray") -> str:
 def cer(hypothesis: str, reference: str) -> float:
     import jiwer
 
+    reference = _normalize_for_scoring(reference)
+    hypothesis = _normalize_for_scoring(hypothesis)
     if len(reference.strip()) == 0:
         return 0.0 if len(hypothesis.strip()) == 0 else 1.0
     return float(jiwer.cer(reference, hypothesis))
@@ -55,6 +69,7 @@ class CTCHead:
     lr: float = 1e-3
     epochs: int = 30
     seed: int = 0
+    device: str = "cpu"
     model: "object" = None
 
     def fit(self, features: list[np.ndarray], texts: list[str]) -> "CTCHead":
@@ -62,7 +77,7 @@ class CTCHead:
         from torch.nn.utils.rnn import pad_sequence
 
         torch.manual_seed(self.seed)
-        self.model = torch.nn.Linear(self.feature_dim, VOCAB_SIZE)
+        self.model = torch.nn.Linear(self.feature_dim, VOCAB_SIZE).to(self.device)
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         ctc_loss = torch.nn.CTCLoss(blank=BLANK_IDX, zero_infinity=True)
 
@@ -72,8 +87,10 @@ class CTCHead:
         target_lengths = torch.tensor([max(len(t), 1) for t in target_lists], dtype=torch.long)
         targets = torch.cat(
             [torch.tensor(t if t else [BLANK_IDX], dtype=torch.long) for t in target_lists]
-        )
-        padded_feats = pad_sequence(feat_tensors, batch_first=False)  # (T, N, D)
+        ).to(self.device)
+        padded_feats = pad_sequence(feat_tensors, batch_first=False).to(self.device)  # (T, N, D)
+        # input_lengths/target_lengths must stay on CPU -- torch.nn.CTCLoss requires it
+        # regardless of where log_probs/targets live.
 
         for _ in range(self.epochs):
             optimizer.zero_grad()
@@ -88,6 +105,6 @@ class CTCHead:
         import torch
 
         with torch.no_grad():
-            logits = self.model(torch.from_numpy(np.asarray(feature, dtype=np.float32)))
-            log_probs = torch.log_softmax(logits, dim=-1).numpy()
+            logits = self.model(torch.from_numpy(np.asarray(feature, dtype=np.float32)).to(self.device))
+            log_probs = torch.log_softmax(logits, dim=-1).cpu().numpy()
         return greedy_decode(log_probs)

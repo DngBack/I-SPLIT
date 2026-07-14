@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from isplit.eval.ablations import (
     isolated_vs_joint_subspace_similarity,
@@ -21,8 +22,14 @@ def test_shuffle_pair_correspondence_preserves_marginal_but_breaks_pairing():
 def test_true_pairs_concentrate_more_energy_than_mismatched():
     rng = np.random.default_rng(0)
     d, r, n = 40, 3, 800
-    model = build_orthogonal_mixing_model(d, [FactorSpec("speaker", r)], seed=0)
-    latents = sample_latents([FactorSpec("speaker", r)], n=n, seed=1)
+    # Two factors, and only `speaker` is intervened on: `content` is held fixed
+    # within each true pair. That held-fixed factor is the whole point -- it is
+    # what shuffling the pair correspondence destroys. With a single-factor model
+    # the true and mismatched deltas are identically distributed, so the
+    # assertion below would just be a coin flip.
+    factors = [FactorSpec("speaker", r), FactorSpec("content", 10)]
+    model = build_orthogonal_mixing_model(d, factors, seed=0)
+    latents = sample_latents(factors, n=n, seed=1)
     features_a = synthesize(model, latents, noise_std=0.3, seed=2)
 
     new_latents = dict(latents)
@@ -43,7 +50,9 @@ def test_isolated_vs_joint_subspace_similarity_orthogonal_is_zero():
     d = 12
     u1 = np.eye(d)[:, :3]
     u2 = np.eye(d)[:, 3:6]
-    assert isolated_vs_joint_subspace_similarity(u1, u2) == 0.0
+    # cos(pi/2) is 6.1e-17, not 0, in IEEE double -- so the squared cosine lands
+    # at ~1e-33 rather than exactly 0.0.
+    assert isolated_vs_joint_subspace_similarity(u1, u2) == pytest.approx(0.0, abs=1e-12)
 
 
 def test_linear_vs_nonlinear_leakage_detects_nonlinear_signal():

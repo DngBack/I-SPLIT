@@ -1,16 +1,39 @@
-# CPU pilot scale: small enough to run end-to-end on a machine with no GPU in
-# a reasonable time. This is what this repo validates by default -- results
-# from this config are preliminary/pilot, not paper-final numbers.
+# Pilot scale: an end-to-end run that is small enough to iterate on, but sized
+# so the metrics it produces are actually resolvable. Results are still
+# preliminary -- not paper-final numbers -- but the sample sizes below are
+# chosen against the noise floor of each metric, not picked round.
 data:
-  max_speakers: 20
-  max_utterances_per_speaker: 15
+  # Shared-prompt VCTK subset (see scripts/materialize_vctk_hf.py): only the
+  # elicitation prompts are the same sentence across speakers, and the
+  # max_utterances_per_speaker cap below samples utterances at random -- pointed
+  # at the full corpus it would leave almost no same-text/different-speaker
+  # pairs standing, starving the speaker factor.
+  vctk_dir: data/raw/vctk_common
+  # 40 speakers, 0.25 held out -> 10 held-out speakers. Both raise the ceiling on
+  # the speaker probe (40 classes, not 20) and widen the held-out pool that CSS
+  # is measured on.
+  max_speakers: 40
+  max_utterances_per_speaker: 20
+  held_out_speaker_fraction: 0.25
   max_musan_noise_files: 40
   max_librispeech_speakers: 15
   max_librispeech_utterances_per_speaker: 10
-  held_out_speaker_fraction: 0.2
-  n_speaker_pairs: 400
-  n_content_pairs: 400
-  n_environment_pairs: 400
-  n_channel_pairs: 400
+  # CSS is a mean of per-swap 0/1 outcomes, so its standard error is ~0.5/sqrt(n
+  # held-out swaps). At 400 sampled pairs the speaker factor kept only ~14 of
+  # them (a pair is held out only when *both* its speakers are), i.e. SE ~= 0.13
+  # -- larger than the layer-to-layer differences the audit is trying to read.
+  # These counts put every factor's SE near 0.03. Sampling more pairs costs no
+  # extra feature extraction for speaker/content (they reuse cached clean
+  # utterances); environment/channel add some.
+  n_speaker_pairs: 3000
+  n_content_pairs: 1500
+  n_environment_pairs: 1500
+  n_channel_pairs: 1500
   snr_levels_db: [0.0, 10.0, 20.0]
   seed: 0
+
+encoders:
+  device: cuda
+  # 2-of-4 pilot (wav2vec2-base, hubert-base) confirmed the pipeline end to
+  # end; back to all 4 registered encoders (active_encoders: null runs
+  # everything) now that the theory has held up.

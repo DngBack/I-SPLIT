@@ -26,7 +26,11 @@ class MLPProbe:
             hidden_layer_sizes=(self.hidden_dim,),
             max_iter=self.max_iter,
             random_state=self.seed,
-            early_stopping=True,
+            # No early stopping: this probe exists to measure how much of a factor
+            # is *nonlinearly* recoverable, and nonlinear targets (XOR-like leakage)
+            # sit on a long loss plateau early on. Stopping on it aborts after a few
+            # dozen iterations and understates the leakage it is meant to detect.
+            early_stopping=False,
         )
         self.clf.fit(self.scaler.transform(features), labels)
         return self

@@ -36,6 +36,28 @@ def train_label_probe(
     return probe, {"x_train": x_train, "y_train": y_train}
 
 
+def _stratified_utterance_split(
+    manifest: pd.DataFrame, label_col: str, held_fraction: float, seed: int
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Hold out a fraction of the utterances *within* each label, so train and
+    eval share a label space. Labels with a single utterance are dropped (they
+    cannot appear on both sides).
+    """
+    rng = np.random.default_rng(seed)
+    train_parts, held_parts = [], []
+    for _, group in manifest.groupby(label_col):
+        if len(group) < 2:
+            continue
+        n_held = max(1, int(round(len(group) * held_fraction)))
+        n_held = min(n_held, len(group) - 1)  # always leave at least one to train on
+        perm = rng.permutation(len(group))
+        held_parts.append(group.iloc[perm[:n_held]])
+        train_parts.append(group.iloc[perm[n_held:]])
+    if not train_parts:
+        return pd.DataFrame(columns=manifest.columns), pd.DataFrame(columns=manifest.columns)
+    return pd.concat(train_parts), pd.concat(held_parts)
+
+
 def layerwise_decodability(
     features_dir: str | Path,
     encoder_name: str,
@@ -43,24 +65,41 @@ def layerwise_decodability(
     manifest: pd.DataFrame,
     label_col: str,
     utt_to_split: dict[str, str],
+    held_fraction: float = 0.3,
+    seed: int = 0,
 ) -> float:
-    """Held-out accuracy of a linear probe predicting `label_col`."""
+    """Held-out accuracy of a linear probe predicting `label_col`.
+
+    Uses the speaker-disjoint split when the label survives it (prompt_id does:
+    held-out speakers read the same prompts). For a *closed-set* label like
+    speaker_id it cannot: a speaker-disjoint eval set contains no identity the
+    probe was trained on, so accuracy is 0 at every layer of every encoder by
+    construction -- a property of the split, not of the representation. Such
+    labels are probed the standard way instead, holding out utterances within
+    each speaker.
+    """
     train_rows = manifest[manifest["utt_id"].map(utt_to_split) == "train"]
     held_rows = manifest[manifest["utt_id"].map(utt_to_split) == "held_out"]
     if train_rows.empty or held_rows.empty:
         return float("nan")
 
-    x_train = np.stack(
-        [load_pooled_layer(features_dir, encoder_name, "train", uid, None, layer) for uid in train_rows["utt_id"]]
-    )
-    y_train = train_rows[label_col].to_numpy()
-    x_held = np.stack(
-        [load_pooled_layer(features_dir, encoder_name, "held_out", uid, None, layer) for uid in held_rows["utt_id"]]
-    )
-    y_held = held_rows[label_col].to_numpy()
+    if not set(held_rows[label_col]) & set(train_rows[label_col]):
+        train_rows, held_rows = _stratified_utterance_split(manifest, label_col, held_fraction, seed)
+        if train_rows.empty or held_rows.empty:
+            return float("nan")
 
-    probe = LinearProbe().fit(x_train, y_train)
-    return probe.score(x_held, y_held)
+    def _pooled(rows: pd.DataFrame) -> np.ndarray:
+        # each utterance is cached under its own split dir, and a stratified
+        # split draws from both
+        return np.stack(
+            [
+                load_pooled_layer(features_dir, encoder_name, utt_to_split[uid], uid, None, layer)
+                for uid in rows["utt_id"]
+            ]
+        )
+
+    probe = LinearProbe().fit(_pooled(train_rows), train_rows[label_col].to_numpy())
+    return probe.score(_pooled(held_rows), held_rows[label_col].to_numpy())
 
 
 def layerwise_causal_selectivity(

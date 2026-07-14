@@ -3,6 +3,7 @@ math: loading paired feature matrices for a given (encoder, layer, factor),
 and estimating that factor's subspace via intervention covariance.
 """
 
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -13,13 +14,45 @@ from isplit.encoders.extract import pool_mean
 from isplit.subspace.intervention_covariance import estimate_subspace_from_deltas
 
 
+@lru_cache(maxsize=100_000)
+def _pooled_all_layers(
+    features_dir: str, encoder_name: str, split: str, utt_id: str, condition: str | None
+) -> tuple[np.ndarray, ...]:
+    """Every layer's mean-pooled vector for one cached utterance, memoized.
+
+    Callers ask for one (utterance, layer) at a time, but the cache file holds
+    all 13 layers together -- so a naive read decompresses the whole file and
+    pools all 13 layers to return one of them, then does it again for the next
+    layer. Memoizing the pooled result turns each file into one read instead of
+    13, which is what makes the layer sweeps tractable. Tuple-of-arrays (not a
+    dict) so the return value is cheap to index and not accidentally mutable.
+    """
+    features = load_features(cache_path(features_dir, encoder_name, split, utt_id, condition))
+    pooled = pool_mean(features)
+    return tuple(pooled[i] for i in sorted(pooled))
+
+
+@lru_cache(maxsize=20_000)
+def _frames_layer(
+    features_dir: str, encoder_name: str, split: str, utt_id: str, condition: str | None, layer: int
+) -> np.ndarray:
+    features = load_features(cache_path(features_dir, encoder_name, split, utt_id, condition))
+    return features[layer].astype(np.float32)
+
+
 def load_pooled_layer(
     features_dir: str | Path, encoder_name: str, split: str, utt_id: str, condition: str | None, layer: int
 ) -> np.ndarray:
-    path = cache_path(features_dir, encoder_name, split, utt_id, condition)
-    features = load_features(path)
-    pooled = pool_mean(features)
-    return pooled[layer]
+    return _pooled_all_layers(str(features_dir), encoder_name, split, utt_id, condition)[layer]
+
+
+def load_frames_layer(
+    features_dir: str | Path, encoder_name: str, split: str, utt_id: str, condition: str | None, layer: int
+) -> np.ndarray:
+    """Frame-level (T, D) features for one layer -- the content (CTC) probe needs
+    the time axis that pooling throws away.
+    """
+    return _frames_layer(str(features_dir), encoder_name, split, utt_id, condition, layer)
 
 
 def load_paired_features(

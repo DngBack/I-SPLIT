@@ -52,6 +52,14 @@ class EncodersConfig:
     pooling: str = "mean"  # utterance-level pooling for non-content probes
     batch_size: int = 4
     device: str = "cpu"
+    # restrict a run to a subset of `encoders` by name (e.g. while iterating on
+    # 2 of 4 encoders); None runs all of them
+    active_encoders: list[str] | None = None
+
+    def active(self) -> list[EncoderConfig]:
+        if self.active_encoders is None:
+            return self.encoders
+        return [e for e in self.encoders if e.name in self.active_encoders]
 
 
 @dataclass

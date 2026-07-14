@@ -54,13 +54,24 @@ def assign_split_by_speaker(
     return df[df["split"].notna()].reset_index(drop=True)
 
 
+def _text_key(text: str) -> str:
+    return " ".join(str(text).strip().lower().split())
+
+
 def make_speaker_pairs(vctk_manifest: pd.DataFrame, n_pairs: int, seed: int) -> pd.DataFrame:
-    """(a, b) pairs sharing a prompt_id (identical text) but different speaker_id."""
+    """(a, b) pairs with identical text but different speaker_id.
+
+    Grouped on the *text* itself, not on prompt_id: in VCTK only the elicitation
+    prompts (ids 001-024) are the same sentence for every speaker. Beyond those,
+    each speaker reads a different newspaper sentence that happens to reuse the
+    same id, so grouping by prompt_id would yield "speaker" pairs that also
+    differ in content -- exactly the confound these pairs exist to rule out.
+    """
     rng = np.random.default_rng(seed)
-    grouped = vctk_manifest.groupby("prompt_id")
-    groups = {pid: g for pid, g in grouped if g["speaker_id"].nunique() >= 2}
-    prompt_ids = list(groups)
-    if not prompt_ids:
+    grouped = vctk_manifest.assign(_tk=vctk_manifest["text"].map(_text_key)).groupby("_tk")
+    groups = {tk: g for tk, g in grouped if g["speaker_id"].nunique() >= 2}
+    text_keys = list(groups)
+    if not text_keys:
         return pd.DataFrame(
             columns=["pair_id", "factor", "a_utt_id", "b_utt_id", "a_speaker_id", "b_speaker_id", "prompt_id"]
         )
@@ -69,8 +80,7 @@ def make_speaker_pairs(vctk_manifest: pd.DataFrame, n_pairs: int, seed: int) -> 
     attempts, max_attempts = 0, n_pairs * 30 + 100
     while len(rows) < n_pairs and attempts < max_attempts:
         attempts += 1
-        pid = prompt_ids[rng.integers(0, len(prompt_ids))]
-        group = groups[pid]
+        group = groups[text_keys[rng.integers(0, len(text_keys))]]
         speakers = group["speaker_id"].unique()
         sa, sb = rng.choice(speakers, size=2, replace=False)
         a_row = group[group.speaker_id == sa].iloc[0]
@@ -87,7 +97,7 @@ def make_speaker_pairs(vctk_manifest: pd.DataFrame, n_pairs: int, seed: int) -> 
                 "b_utt_id": b_row.utt_id,
                 "a_speaker_id": sa,
                 "b_speaker_id": sb,
-                "prompt_id": pid,
+                "prompt_id": a_row.prompt_id,
             }
         )
     return pd.DataFrame(rows)
